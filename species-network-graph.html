@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphe de Parenté Génétique</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+            color: #333;
+            overflow: hidden;
+        }
+
+        #container {
+            display: flex;
+            height: 100vh;
+        }
+
+        #graph {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            background-color: #fff;
+        }
+
+        #info-panel {
+            width: 300px;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #info-content {
+            flex: 1;
+        }
+
+        .connection-list {
+            padding-left: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .connection-list li {
+            margin-bottom: 5px;
+            padding: 3px 8px;
+            border-radius: 3px;
+            transition: background-color 0.2s;
+        }
+
+        .connection-list li:hover {
+            background-color: #f0f0f0;
+        }
+
+        .node {
+            cursor: pointer;
+            transition: r 0.2s;
+        }
+
+        .link {
+            stroke-opacity: 0.6;
+            transition: stroke-opacity 0.2s;
+        }
+
+        h1, h2, h3 {
+            margin-top: 0;
+            color: #4267B2;
+        }
+
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background-color: rgba(255,255,255,0.9);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .search-container {
+            margin-bottom: 15px;
+        }
+
+        #search {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .slider-container {
+            margin-bottom: 15px;
+        }
+
+        .slider {
+            width: 100%;
+            margin-top: 5px;
+        }
+
+        button {
+            background-color: #4267B2;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #3b5998;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #4267B2;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background-color: rgba(255,255,255,0.9);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            margin-right: 8px;
+            border-radius: 50%;
+        }
+
+        .tooltip {
+            position: absolute;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        #debug {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="graph">
+            <div id="loading">Chargement du graphe de parenté génétique...</div>
+            <div class="controls">
+                <div class="search-container">
+                    <input type="text" id="search" placeholder="Rechercher une espèce...">
+                </div>
+                <div class="slider-container">
+                    <label for="threshold">Seuil de similarité: <span id="threshold-value">50</span>%</label>
+                    <input type="range" id="threshold" class="slider" min="0" max="100" value="50">
+                </div>
+                <button id="reset-zoom">Réinitialiser la vue</button>
+                <button id="toggle-labels">Afficher les noms</button>
+                <button id="toggle-physics">Figer le graphe</button>
+            </div>
+            <div class="legend">
+                <h3>Types d'espèces</h3>
+                <div id="legend-items"></div>
+            </div>
+        </div>
+        <div id="info-panel">
+            <h2>Informations sur l'espèce</h2>
+            <div id="info-content">
+                <p>Sélectionnez une espèce dans le graphe pour afficher ses relations génétiques.</p>
+                <p>Vous pouvez également:</p>
+                <ul>
+                    <li>Zoomer avec la molette de la souris</li>
+                    <li>Déplacer le graphe en glissant</li>
+                    <li>Ajuster le seuil de similarité</li>
+                    <li>Rechercher une espèce</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div id="debug"></div>
+
+    <script>
+        console.log("Script starting...");
+        
+        // Define species categories and their colors
+        const categories = {
+            "Primates": "#FF5733",
+            "Mammals": "#C70039",
+            "Birds": "#FFC300",
+            "Reptiles": "#33FF57",
+            "Amphibians": "#33FFF6",
+            "Fish": "#3357FF",
+            "Insects": "#9D33FF",
+            "Plants": "#4CAF50",
+            "Fungi": "#9E9E9E",
+            "Bacteria": "#795548",
+            "Other": "#607D8B"
+        };
+
+        // Mapping of species to categories - simplified for core species
+        const speciesCategories = {
+            // Primates
+            "Humain": "Primates",
+            "Chimpanzé": "Primates",
+            "Bonobo": "Primates",
+            "Gorille": "Primates",
+            "Orang-outan": "Primates",
+            "Singe rhésus": "Primates",
+
+            // Mammals
+            "Souris": "Mammals",
+            "Chien domestique": "Mammals",
+            "Chat domestique": "Mammals",
+            "Vache": "Mammals",
+            "Cochon": "Mammals",
+            "Cheval": "Mammals",
+            "Mouton": "Mammals",
+            "Rat": "Mammals",
+            "Lapin": "Mammals",
+            "Éléphant": "Mammals",
+            "Dauphin": "Mammals",
+            "Baleine": "Mammals",
+            "Chauve-souris": "Mammals",
+            "Ornithorynque": "Mammals",
+            "Kangourou": "Mammals",
+            "Lion": "Mammals",
+            "Tigre": "Mammals",
+            "Ours brun": "Mammals",
+            "Loup": "Mammals",
+
+            // Birds
+            "Poulet": "Birds",
+            "Dinde": "Birds",
+            "Canard": "Birds",
+            "Aigle": "Birds",
+            "Perroquet": "Birds",
+            "Diamant mandarin": "Birds",
+
+            // Reptiles
+            "Crocodile": "Reptiles",
+            "Tortue": "Reptiles",
+            "Serpent": "Reptiles",
+            "Lézard": "Reptiles",
+
+            // Amphibians
+            "Grenouille": "Amphibians",
+            "Crapaud": "Amphibians",
+            "Salamandre": "Amphibians",
+
+            // Fish
+            "Poisson-zèbre": "Fish",
+            "Saumon": "Fish",
+            "Thon": "Fish",
+            "Requin": "Fish",
+            "Cœlacanthe": "Fish",
+
+            // Insects and Arthropods
+            "Drosophile": "Insects",
+            "Moustique": "Insects",
+            "Abeille": "Insects",
+            "Ver à soie": "Insects",
+            "Ver nématode": "Insects",
+
+            // Plants
+            "Banane": "Plants",
+            "Riz": "Plants",
+            "Maïs": "Plants",
+            "Pomme": "Plants",
+            "Tomate": "Plants",
+            "Pin": "Plants",
+            "Mousse": "Plants",
+
+            // Fungi
+            "Levure": "Fungi",
+            "Champignon": "Fungi",
+
+            // Bacteria
+            "Bactérie E. coli": "Bacteria",
+            "E. coli": "Bacteria",
+
+            // Other
+            "Archées": "Other",
+            "Poulpe": "Other",
+            "Calamar": "Other"
+        };
+
+        // Function to get category for a species, with fallback
+        function getCategory(species) {
+            return speciesCategories[species] || "Other";
+        }
+
+        // Raw data from the table
+        const rawData = `
+| Humain | Chimpanzé | 98,8 % |
+| Humain | Bonobo | 98,7 % |
+| Humain | Gorille | 98,4 % |
+| Humain | Orang-outan | 97 % |
+| Humain | Singe rhésus | 93,5 % |
+| Humain | Souris | 85 % |
+| Humain | Chien domestique | 84 % |
+| Humain | Chat domestique | 90 % |
+| Humain | Poulet | 60 % |
+| Humain | Drosophile | 60 % |
+| Humain | Banane | 50 % |
+| Humain | Poisson-zèbre | 70 % |
+| Humain | Vache | 80 % |
+| Humain | Cochon | 84,0 % |
+| Humain | Cheval | 82,0 % |
+| Humain | Mouton | 81,0 % |
+| Humain | Rat | 84,0 % |
+| Humain | Lapin | 80,0 % |
+| Humain | Cochon d'Inde | 78,0 % |
+| Humain | Éléphant | 80,5 % |
+| Humain | Dauphin | 83,0 % |
+| Humain | Baleine | 82,5 % |
+| Humain | Chauve-souris | 85,0 % |
+| Humain | Ornithorynque | 75,0 % |
+| Humain | Kangourou | 72,0 % |
+| Humain | Poulet | 60,0 % |
+| Humain | Dinde | 60,0 % |
+| Humain | Canard | 60,0 % |
+| Humain | Diamant mandarin | 65,0 % |
+| Humain | Crocodile | 57,0 % |
+| Humain | Tortue | 58,0 % |
+| Humain | Grenouille | 65,0 % |
+| Humain | Saumon | 60,0 % |
+| Humain | Thon | 60,0 % |
+| Humain | Requin | 60,0 % |
+| Humain | Dipneuste | 61,0 % |
+| Humain | Cœlacanthe | 63,0 % |
+| Humain | Moustique | 52,0 % |
+| Humain | Abeille | 44,0 % |
+| Humain | Ver à soie | 41,0 % |
+| Humain | Ver nématode | 35,0 % |
+| Humain | Levure | 26,0 % |
+| Humain | Riz | 25,0 % |
+| Humain | Maïs | 24,0 % |
+| Humain | Pomme | 24,0 % |
+| Humain | Pin | 23,0 % |
+| Humain | Mousse | 15,0 % |
+| Humain | Bactérie E. coli | 8,0 % |
+| Humain | Archées | 7,0 % |
+| Chimpanzé | Bonobo | 99,6 % |
+| Chimpanzé | Gorille | 98,5 % |
+| Chimpanzé | Orang-outan | 97,4 % |
+| Chimpanzé | Singe rhésus | 93,5 % |
+| Chimpanzé | Souris | 85,0 % |
+| Chimpanzé | Chien domestique | 84,0 % |
+| Chimpanzé | Chat domestique | 90,0 % |
+| Bonobo | Gorille | 98,5 % |
+| Bonobo | Orang-outan | 97,3 % |
+| Bonobo | Singe rhésus | 93,4 % |
+| Gorille | Orang-outan | 97,0 % |
+| Gorille | Singe rhésus | 93,0 % |
+| Orang-outan | Singe rhésus | 93,0 % |
+| Loup | Chien domestique | 99,9 % |
+| Loup | Coyote | 96,0 % |
+| Loup | Chacal doré | 94,0 % |
+| Loup | Renard | 92,0 % |
+| Chien domestique | Coyote | 96,0 % |
+| Chien domestique | Chacal doré | 93,8 % |
+| Chien domestique | Renard | 92,0 % |
+| Chien domestique | Lycaon | 90,0 % |
+| Chien domestique | Chat domestique | 85,0 % |
+| Tigre | Chat domestique | 95,6 % |
+| Tigre | Lion | 95,8 % |
+| Tigre | Léopard | 95,0 % |
+| Tigre | Jaguar | 94,8 % |
+| Tigre | Panthère des neiges | 94,5 % |
+| Lion | Léopard | 95,5 % |
+| Lion | Jaguar | 95,0 % |
+| Lion | Guépard | 93,5 % |
+| Chat domestique | Léopard | 95,0 % |
+| Chat domestique | Guépard | 93,0 % |
+| Chat domestique | Puma | 93,5 % |
+| Chat domestique | Lynx | 94,0 % |
+| Ours brun | Ours polaire | 96,0 % |
+| Ours brun | Ours noir | 96,5 % |
+| Ours brun | Panda géant | 92,0 % |
+| Ours brun | Raton laveur | 84,0 % |
+| Ours polaire | Ours noir | 95,0 % |
+| Panda géant | Raton laveur | 83,0 % |
+| Cheval | Âne | 94,0 % |
+| Cheval | Zèbre | 95,0 % |
+| Cheval | Rhinocéros | 85,0 % |
+| Cheval | Tapir | 87,0 % |
+| Âne | Zèbre | 93,0 % |
+| Vache | Bison | 99,5 % |
+| Vache | Buffle d'eau | 98,0 % |
+| Vache | Yack | 98,5 % |
+| Vache | Chèvre | 90,0 % |
+| Vache | Mouton | 90,5 % |
+| Vache | Girafe | 88,0 % |
+| Vache | Cerf | 91,0 % |
+| Vache | Antilope | 90,0 % |
+| Vache | Hippopotame | 83,0 % |
+| Vache | Baleine | 85,0 % |
+| Vache | Cochon | 82,0 % |
+| Mouton | Chèvre | 98,0 % |
+| Mouton | Cerf | 90,0 % |
+| Mouton | Antilope | 90,0 % |
+| Mouton | Girafe | 87,0 % |
+| Mouton | Chameau | 86,0 % |
+| Mouton | Lama | 87,0 % |
+| Chèvre | Antilope | 92,0 % |
+| Éléphant | Mammouth | 99,0 % |
+| Éléphant | Mastodonte | 97,0 % |
+| Éléphant | Lamantin | 84,0 % |
+| Éléphant | Daman | 85,0 % |
+| Lamantin | Dugong | 95,0 % |
+| Dauphin | Baleine | 96,0 % |
+| Dauphin | Marsouin | 97,0 % |
+| Dauphin | Narval | 92,0 % |
+| Dauphin | Hippopotame | 83,0 % |
+| Baleine | Hippopotame | 82,0 % |
+| Rat | Souris | 90,0 % |
+| Rat | Cochon d'Inde | 82,0 % |
+| Rat | Hamster | 85,0 % |
+| Rat | Gerbille | 84,0 % |
+| Rat | Écureuil | 80,0 % |
+| Rat | Castor | 79,0 % |
+| Rat | Cabiaï | 78,0 % |
+| Rat | Porc-épic | 77,0 % |
+| Souris | Hamster | 85,0 % |
+| Souris | Gerbille | 84,0 % |
+| Souris | Écureuil | 80,0 % |
+| Lapin | Lièvre | 98,0 % |
+| Lapin | Pika | 90,0 % |
+| Lapin | Cochon d'Inde | 80,0 % |
+| Lapin | Écureuil | 79,0 % |
+| Ornithorynque | Échidné | 90,0 % |
+| Ornithorynque | Kangourou | 65,0 % |
+| Ornithorynque | Opossum | 60,0 % |
+| Kangourou | Wallaby | 98,0 % |
+| Kangourou | Koala | 90,0 % |
+| Kangourou | Diable de Tasmanie | 87,0 % |
+| Kangourou | Opossum | 82,0 % |
+| Poulet | Dinde | 90,0 % |
+| Poulet | Canard | 85,0 % |
+| Poulet | Oie | 84,0 % |
+| Poulet | Autruche | 80,0 % |
+| Poulet | Pingouin | 75,0 % |
+| Poulet | Aigle | 85,0 % |
+| Poulet | Faucon | 84,0 % |
+| Poulet | Hibou | 83,0 % |
+| Poulet | Pigeon | 87,0 % |
+| Poulet | Perroquet | 84,0 % |
+| Dinde | Canard | 84,0 % |
+| Canard | Oie | 93,0 % |
+| Canard | Cygne | 92,0 % |
+| Aigle | Buse | 92,0 % |
+| Aigle | Faucon | 90,0 % |
+| Aigle | Hibou | 88,0 % |
+| Aigle | Vautour | 89,0 % |
+| Perroquet | Cacatoès | 93,0 % |
+| Perroquet | Ara | 94,0 % |
+| Perroquet | Perruche ondulée | 91,0 % |
+| Crocodile | Alligator | 93,0 % |
+| Crocodile | Gavial | 90,0 % |
+| Crocodile | Caïman | 91,0 % |
+| Crocodile | Tortue | 75,0 % |
+| Crocodile | Serpent | 70,0 % |
+| Crocodile | Lézard | 72,0 % |
+| Crocodile | Oiseau | 68,0 % |
+| Tortue | Tortue terrestre | 95,0 % |
+| Tortue | Lézard | 70,0 % |
+| Tortue | Serpent | 68,0 % |
+| Serpent | Lézard | 85,0 % |
+| Serpent | Sphénodon | 70,0 % |
+| Lézard | Gecko | 90,0 % |
+| Lézard | Iguane | 90,0 % |
+| Lézard | Caméléon | 88,0 % |
+| Grenouille | Crapaud | 95,0 % |
+| Grenouille | Salamandre | 80,0 % |
+| Grenouille | Axolotl | 79,0 % |
+| Grenouille | Triton | 78,0 % |
+| Grenouille | Cécilie | 75,0 % |
+| Saumon | Truite | 95,0 % |
+| Saumon | Omble chevalier | 94,0 % |
+| Saumon | Brochet | 85,0 % |
+| Saumon | Thon | 80,0 % |
+| Saumon | Cabillaud | 75,0 % |
+| Saumon | Requin | 60,0 % |
+| Thon | Maquereau | 90,0 % |
+| Thon | Marlin | 89,0 % |
+| Thon | Espadon | 88,0 % |
+| Requin | Raie | 95,0 % |
+| Requin | Poisson-scie | 93,0 % |
+| Requin | Dipneuste | 55,0 % |
+| Requin | Cœlacanthe | 57,0 % |
+| Moustique | Mouche à fruits | 80,0 % |
+| Moustique | Mouche domestique | 82,0 % |
+| Moustique | Papillon | 60,0 % |
+| Moustique | Coléoptère | 55,0 % |
+| Abeille | Bourdon | 92,0 % |
+| Abeille | Guêpe | 85,0 % |
+| Abeille | Fourmi | 80,0 % |
+| Abeille | Papillon | 55,0 % |
+| Papillon | Papillon de nuit | 90,0 % |
+| Araignée | Scorpion | 75,0 % |
+| Araignée | Tique | 70,0 % |
+| Araignée | Acarien | 69,0 % |
+| Araignée | Mille-pattes | 65,0 % |
+| Araignée | Crabe | 60,0 % |
+| Homard | Crabe | 85,0 % |
+| Homard | Crevette | 83,0 % |
+| Homard | Écrevisse | 90,0 % |
+| Ver de terre | Sangsue | 70,0 % |
+| Calamar | Poulpe | 85,0 % |
+| Calamar | Nautilus | 70,0 % |
+| Calamar | Escargot | 65,0 % |
+| Calamar | Palourde | 64,0 % |
+| Poulpe | Seiche | 86,0 % |
+| Escargot | Limace | 90,0 % |
+| Palourde | Huître | 95,0 % |
+| Palourde | Moule | 94,0 % |
+| Palourde | Coquille Saint-Jacques | 93,0 % |
+| Étoile de mer | Oursin | 70,0 % |
+| Étoile de mer | Concombre de mer | 65,0 % |
+| Riz | Blé | 85,0 % |
+| Riz | Maïs | 82,0 % |
+| Riz | Orge | 86,0 % |
+| Riz | Avoine | 83,0 % |
+| Riz | Sorgho | 80,0 % |
+| Riz | Bambou | 85,0 % |
+| Riz | Banane | 65,0 % |
+| Riz | Pomme | 60,0 % |
+| Riz | Orange | 59,0 % |
+| Riz | Tomate | 58,0 % |
+| Riz | Pomme de terre | 57,0 % |
+| Riz | Mousse | 45,0 % |
+| Blé | Orge | 90,0 % |
+| Blé | Seigle | 89,0 % |
+| Blé | Avoine | 85,0 % |
+| Maïs | Sorgho | 89,0 % |
+| Maïs | Canne à sucre | 80,0 % |
+| Pomme | Poire | 95,0 % |
+| Pomme | Pêche | 85,0 % |
+| Pomme | Cerise | 84,0 % |
+| Pomme | Fraise | 75,0 % |
+| Pomme | Framboise | 74,0 % |
+| Tomate | Pomme de terre | 92,0 % |
+| Tomate | Aubergine | 85,0 % |
+| Tomate | Poivron | 84,0 % |
+| Chou | Brocoli | 99,0 % |
+| Chou | Chou-fleur | 98,0 % |
+| Chou | Chou frisé | 95,0 % |
+| Pin | Épicéa | 90,0 % |
+| Pin | Sapin | 89,0 % |
+| Pin | Cèdre | 85,0 % |
+| Pin | Chêne | 75,0 % |
+| Pin | Érable | 74,0 % |
+| Pin | Fougère | 60,0 % |
+| Chêne | Hêtre | 89,0 % |
+| Chêne | Châtaignier | 87,0 % |
+| Mousse | Hépatique | 85,0 % |
+| Mousse | Anthocérote | 80,0 % |
+| Mousse | Fougère | 70,0 % |
+| Levure | Moisissure | 80,0 % |
+| Levure | Champignon | 75,0 % |
+| Levure | E. coli | 20,0 % |
+| E. coli | Salmonella | 90,0 % |
+| E. coli | Pseudomonas | 70,0 % |
+| E. coli | Bacillus | 65,0 % |
+| E. coli | Staphylococcus | 60,0% |
+| E. coli | Archées | 30,0% |
+`;
+
+        function parseData() {
+            console.log("Parsing data...");
+            const lines = rawData.trim().split('\n');
+            const nodes = new Map();
+            const links = [];
+
+            lines.forEach(line => {
+                const parts = line.split('|').map(part => part.trim()).filter(part => part);
+                if (parts.length >= 3) {
+                    const source = parts[0];
+                    const target = parts[1];
+                    const similarityStr = parts[2].replace('%', '').replace(',', '.').trim();
+                    const similarity = parseFloat(similarityStr);
+
+                    if (!isNaN(similarity)) {
+                        // Add nodes if they don't exist
+                        if (!nodes.has(source)) {
+                            nodes.set(source, {
+                                id: source,
+                                name: source,
+                                category: getCategory(source),
+                                connections: 0
+                            });
+                        }
+                        if (!nodes.has(target)) {
+                            nodes.set(target, {
+                                id: target,
+                                name: target,
+                                category: getCategory(target),
+                                connections: 0
+                            });
+                        }
+
+                        // Update connection counts
+                        nodes.get(source).connections++;
+                        nodes.get(target).connections++;
+
+                        // Add link
+                        links.push({
+                            source,
+                            target,
+                            value: similarity
+                        });
+                    }
+                }
+            });
+
+            return {
+                nodes: Array.from(nodes.values()),
+                links
+            };
+        }
+
+        function updateLegend() {
+            const legendContainer = document.getElementById('legend-items');
+            legendContainer.innerHTML = '';
+            
+            Object.entries(categories).forEach(([category, color]) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                
+                const colorBox = document.createElement('div');
+                colorBox.className = 'legend-color';
+                colorBox.style.backgroundColor = color;
+                
+                const label = document.createElement('span');
+                label.textContent = category;
+                
+                item.appendChild(colorBox);
+                item.appendChild(label);
+                legendContainer.appendChild(item);
+            });
+        }
+
+        function showSpeciesInfo(species, links) {
+            console.log("Showing info for:", species.name);
+            const panel = document.getElementById('info-content');
+            panel.innerHTML = '';
+            
+            // Header
+            const header = document.createElement('h3');
+            header.textContent = species.name;
+            panel.appendChild(header);
+            
+            // Category
+            const category = document.createElement('p');
+            category.innerHTML = `<strong>Catégorie:</strong> ${species.category}`;
+            panel.appendChild(category);
+            
+            // Get related species
+            const relationships = links.filter(link => 
+                link.source.id === species.id || link.target.id === species.id
+            );
+            
+            if (relationships.length > 0) {
+                const relHeader = document.createElement('h4');
+                relHeader.textContent = 'Relations génétiques:';
+                panel.appendChild(relHeader);
+                
+                const list = document.createElement('ul');
+                list.className = 'connection-list';
+                
+                // Sort by similarity (highest first)
+                relationships.sort((a, b) => b.value - a.value);
+                
+                relationships.forEach(rel => {
+                    const otherSpecies = rel.source.id === species.id ? rel.target : rel.source;
+                    
+                    const item = document.createElement('li');
+                    item.innerHTML = `<strong>${otherSpecies.name}</strong>: ${rel.value.toFixed(1)}% de similarité`;
+                    item.style.borderLeft = `4px solid ${categories[otherSpecies.category]}`;
+                    
+                    // Make it clickable
+                    item.style.cursor = 'pointer';
+                    item.addEventListener('click', () => {
+                        showSpeciesInfo(otherSpecies, links);
+                    });
+                    
+                    list.appendChild(item);
+                });
+                
+                panel.appendChild(list);
+            } else {
+                const noRel = document.createElement('p');
+                noRel.textContent = 'Aucune relation génétique trouvée avec le seuil actuel.';
+                panel.appendChild(noRel);
+            }
+        }
+
+        function initGraph() {
+            console.log("Initializing graph...");
+            try {
+                const { nodes, links } = parseData();
+                console.log(`Parsed ${nodes.length} nodes and ${links.length} links`);
+                
+                // Update the legend
+                updateLegend();
+                
+                // Get graph dimensions
+                const width = document.getElementById('graph').clientWidth;
+                const height = document.getElementById('graph').clientHeight;
+                
+                // Remove any existing SVG
+                d3.select("#graph svg").remove();
+                
+                // Get threshold value
+                const threshold = parseFloat(document.getElementById('threshold').value);
+                console.log(`Applying threshold: ${threshold}%`);
+                
+                // Filter links by threshold
+                const filteredLinks = links.filter(link => link.value >= threshold);
+                console.log(`Filtered to ${filteredLinks.length} links`);
+                
+                // Find connected nodes
+                const connectedIds = new Set();
+                filteredLinks.forEach(link => {
+                    connectedIds.add(link.source);
+                    connectedIds.add(link.target);
+                });
+                
+                // Filter nodes
+                const filteredNodes = nodes.filter(node => connectedIds.has(node.id));
+                console.log(`Filtered to ${filteredNodes.length} nodes`);
+                
+                // Create SVG
+                const svg = d3.select("#graph").append("svg")
+                    .attr("width", width)
+                    .attr("height", height)
+                    .attr("viewBox", [0, 0, width, height])
+                    .call(d3.zoom()
+                        .extent([[0, 0], [width, height]])
+                        .scaleExtent([0.1, 4])
+                        .on("zoom", (event) => g.attr("transform", event.transform))
+                    );
+                
+                const g = svg.append("g");
+                
+                // Create tooltip
+                const tooltip = d3.select("body").append("div")
+                    .attr("class", "tooltip")
+                    .style("opacity", 0);
+                
+                // Create simulation
+                const simulation = d3.forceSimulation(filteredNodes)
+                    .force("link", d3.forceLink(filteredLinks)
+                        .id(d => d.id)
+                        .distance(d => 200 - d.value)
+                        .strength(0.2))
+                    .force("charge", d3.forceManyBody().strength(-400))
+                    .force("center", d3.forceCenter(width / 2, height / 2))
+                    .force("x", d3.forceX(width / 2).strength(0.07))
+                    .force("y", d3.forceY(height / 2).strength(0.07));
+                
+                // Create links
+                const link = g.append("g")
+                    .selectAll("line")
+                    .data(filteredLinks)
+                    .join("line")
+                    .attr("class", "link")
+                    .attr("stroke", "#999")
+                    .attr("stroke-opacity", 0.6)
+                    .attr("stroke-width", d => Math.sqrt(d.value) / 5);
+                
+                // Create nodes
+                const node = g.append("g")
+                    .selectAll("circle")
+                    .data(filteredNodes)
+                    .join("circle")
+                    .attr("class", "node")
+                    .attr("r", d => Math.max(5, Math.min(12, 4 + d.connections / 5)))
+                    .attr("fill", d => categories[d.category])
+                    .attr("stroke", "#fff")
+                    .attr("stroke-width", 1.5)
+                    .on("mouseover", function(event, d) {
+                        // Highlight connected links
+                        link
+                            .attr("stroke-opacity", l => 
+                                l.source.id === d.id || l.target.id === d.id ? 1 : 0.1)
+                            .attr("stroke", l => 
+                                l.source.id === d.id || l.target.id === d.id ? "#000" : "#999");
+                        
+                        // Highlight connected nodes
+                        node
+                            .attr("opacity", n => {
+                                if (n.id === d.id) return 1;
+                                // Check if connected
+                                const isConnected = filteredLinks.some(l => 
+                                    (l.source.id === d.id && l.target.id === n.id) || 
+                                    (l.target.id === d.id && l.source.id === n.id)
+                                );
+                                return isConnected ? 1 : 0.3;
+                            });
+                        
+                        // Emphasize this node
+                        d3.select(this)
+                            .attr("stroke", "#000")
+                            .attr("stroke-width", 2);
+                        
+                        // Show tooltip
+                        tooltip.transition()
+                            .duration(200)
+                            .style("opacity", 0.9);
+                        
+                        tooltip.html(`<strong>${d.name}</strong><br>Catégorie: ${d.category}`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", function() {
+                        // Reset links
+                        link
+                            .attr("stroke-opacity", 0.6)
+                            .attr("stroke", "#999");
+                        
+                        // Reset nodes
+                        node
+                            .attr("opacity", 1)
+                            .attr("stroke", "#fff")
+                            .attr("stroke-width", 1.5);
+                        
+                        // Hide tooltip
+                        tooltip.transition()
+                            .duration(500)
+                            .style("opacity", 0);
+                    })
+                    .on("click", function(event, d) {
+                        showSpeciesInfo(d, filteredLinks);
+                    })
+                    .call(d3.drag()
+                        .on("start", dragStarted)
+                        .on("drag", dragging)
+                        .on("end", dragEnded));
+                
+                // Create labels
+                const label = g.append("g")
+                    .selectAll("text")
+                    .data(filteredNodes)
+                    .join("text")
+                    .attr("class", "node-label")
+                    .attr("opacity", 0) // Initially hidden
+                    .attr("font-size", 10)
+                    .attr("text-anchor", "middle")
+                    .attr("dy", ".35em")
+                    .text(d => d.name);
+                
+                // Update function
+                simulation.on("tick", () => {
+                    link
+                        .attr("x1", d => d.source.x)
+                        .attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x)
+                        .attr("y2", d => d.target.y);
+                    
+                    node
+                        .attr("cx", d => d.x)
+                        .attr("cy", d => d.y);
+                    
+                    label
+                        .attr("x", d => d.x)
+                        .attr("y", d => d.y);
+                });
+                
+                // Drag functions
+                function dragStarted(event, d) {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                    d.fx = d.x;
+                    d.fy = d.y;
+                }
+                
+                function dragging(event, d) {
+                    d.fx = event.x;
+                    d.fy = event.y;
+                }
+                
+                function dragEnded(event, d) {
+                    if (!event.active) simulation.alphaTarget(0);
+                    d.fx = null;
+                    d.fy = null;
+                }
+                
+                // Hide loading message
+                document.getElementById('loading').style.display = 'none';
+                
+                // Add event listeners for controls
+                document.getElementById('reset-zoom').addEventListener('click', () => {
+                    svg.transition().duration(750).call(
+                        d3.zoom().transform,
+                        d3.zoomIdentity,
+                        d3.zoomTransform(svg.node()).invert([width / 2, height / 2])
+                    );
+                });
+                
+                let labelsVisible = false;
+                document.getElementById('toggle-labels').addEventListener('click', function() {
+                    labelsVisible = !labelsVisible;
+                    label.transition().duration(300).attr("opacity", labelsVisible ? 1 : 0);
+                    this.textContent = labelsVisible ? "Masquer les noms" : "Afficher les noms";
+                });
+                
+                let isSimulationRunning = true;
+                document.getElementById('toggle-physics').addEventListener('click', function() {
+                    if (isSimulationRunning) {
+                        simulation.stop();
+                        isSimulationRunning = false;
+                        this.textContent = "Animer le graphe";
+                    } else {
+                        simulation.restart();
+                        isSimulationRunning = true;
+                        this.textContent = "Figer le graphe";
+                    }
+                });
+                
+                // Search functionality
+                document.getElementById('search').addEventListener('input', function() {
+                    const searchTerm = this.value.toLowerCase();
+                    
+                    if (searchTerm.length > 0) {
+                        const matchingNodes = filteredNodes.filter(n => 
+                            n.name.toLowerCase().includes(searchTerm)
+                        );
+                        
+                        // Highlight matching nodes
+                        node.attr("opacity", n => 
+                            matchingNodes.some(match => match.id === n.id) ? 1 : 0.2
+                        );
+                        
+                        // If only one match, show info
+                        if (matchingNodes.length === 1) {
+                            showSpeciesInfo(matchingNodes[0], filteredLinks);
+                        }
+                    } else {
+                        // Reset
+                        node.attr("opacity", 1);
+                    }
+                });
+                
+                // Threshold slider
+                document.getElementById('threshold').addEventListener('input', function() {
+                    document.getElementById('threshold-value').textContent = this.value;
+                });
+                
+                document.getElementById('threshold').addEventListener('change', function() {
+                    console.log("Threshold changed, reinitializing graph");
+                    initGraph();
+                });
+                
+                return { simulation, svg, nodes: filteredNodes, links: filteredLinks };
+            } catch (error) {
+                console.error("Error initializing graph:", error);
+                document.getElementById('loading').textContent = "Erreur lors du chargement du graphe.";
+                document.getElementById('debug').style.display = 'block';
+                document.getElementById('debug').textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        // Initialize everything
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM loaded, initializing graph");
+            initGraph();
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            console.log("Window resized, reinitializing graph");
+            initGraph();
+        });
+    </script>
+</body>
+</html>
